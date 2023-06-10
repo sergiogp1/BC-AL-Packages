@@ -1,0 +1,57 @@
+{
+  "name": "al-packages",
+  "displayName": "AL Packages",
+  "publisher": "sergiogp1",
+  "description": "AL Packages allows you to download symbols in 10 seconds of any Business Central version without having to connect to an online Sandbox or to an On-Premise environment.",
+  "icon": "logo.png",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.78.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sergiogp1/BC-AL-Packages"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "al-packages.downloadPackages",
+        "title": "AL: Download packages"
+      },
+      {
+        "command": "al-packages.downloadArtifactVersions",
+        "title": "AL: Download artifact versions"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "16.x",
+    "@types/vscode": "^1.78.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.1",
+    "@typescript-eslint/parser": "^5.59.1",
+    "eslint": "^8.39.0",
+    "typescript": "^5.0.4"
+  },
+  "dependencies": {
+    "@basisai/remote-zip": "^0.2.7",
+    "axios": "^1.4.0",
+    "fast-xml-parser": "^4.2.3",
+    "fs": "^0.0.1-security",
+    "json": "^11.0.0",
+    "jszip": "^3.10.1",
+    "node-fetch": "^3.3.1"
+  }
+}
