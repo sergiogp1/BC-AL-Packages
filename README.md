@@ -10,5 +10,3 @@ There are two commands:
 2. AL: Download artifact versions. This command allows you to update the available Microsoft artifacts saved in your PC.
 
 ![Alt Text](resources/gif.gif)
-
-If something doesn't work or you have a suggestion, report it here: github.com/sergiogp1/BC-AL-Packages
