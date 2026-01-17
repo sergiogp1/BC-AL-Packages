@@ -4,7 +4,7 @@
   "publisher": "sergiogp1",
   "description": "AL Packages allows you to download symbols in 10 seconds of any Business Central version without having to connect to an online Sandbox or to an On-Premise environment.",
   "icon": "logo.png",
-  "version": "0.0.1",
+  "version": "2.0.0",
   "engines": {
     "vscode": "^1.78.0"
   },
@@ -22,10 +22,6 @@
       {
         "command": "al-packages.downloadPackages",
         "title": "AL: Download packages"
-      },
-      {
-        "command": "al-packages.downloadArtifactVersions",
-        "title": "AL: Download artifact versions"
       }
     ]
   },
