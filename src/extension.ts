@@ -6,7 +6,7 @@ import { selectCountry } from './countries';
 
 export function activate(context: vscode.ExtensionContext) {
 	let disposable = vscode.commands.registerCommand('al-packages.downloadPackages', async () => {		
-		const appJson = readAppJson();		
+		const appJson = readAppJson();
 		const alPackagesPaths = await getALPackagesPaths();
 
 		let countryCodeLbl = await selectCountry();
@@ -34,6 +34,18 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 	let files = remoteZip.files();
 	let arrayBuffers: Array<{buffer: ArrayBuffer, filename: string}> = [];
 	let symbolsToDownload = ['_Application_', '_System Application_', '_Base Application_', '_Business Foundation_'];
+
+	if (appJson.dependencies && Array.isArray(appJson.dependencies)) {
+		appJson.dependencies.forEach((dep: any) => {
+			if (dep.name) {
+				if (dep.name.startsWith('_')) {
+					symbolsToDownload.push(`${dep.name}_`);
+				} else {
+					symbolsToDownload.push(`_${dep.name}_`);
+				}
+			}
+		});
+	}
 
 	let processedIndices = new Set<number>();
 	for (const symbol of symbolsToDownload) {
@@ -63,6 +75,7 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 
 	try {
 		await Promise.all(writePromises);
+		downloadSystemApp(appJson, selectedVersion, alPackagesPaths);
 		vscode.window.showInformationMessage('Symbols downloaded successfully!');
 	} catch (error) {
 		vscode.window.showErrorMessage(`Error writing symbols: ${error}`);
@@ -70,6 +83,35 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 	}
 }
 
+async function downloadSystemApp(appJson: any, selectedVersion: string, alPackagesPaths?: string[]): Promise<void> {
+	const baseURL = 'https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net';
+	const writePromises: Promise<void>[] = [];
+	
+	let url = new URL(`${baseURL}/${appJson.target}/${selectedVersion}/platform`);
+	let remoteZip = await new RemoteZipPointer({url}).populate();
+	let files = remoteZip.files();
+	let buffer2: { buffer: ArrayBuffer; filename: string } | null = null;
+
+	const index = files.findIndex(file => file.filename === 'System.app');
+	if (index !== -1 ) {
+		buffer2 = { buffer: await remoteZip.fetch(files[index].filename), filename: path.basename(files[index].filename) };
+	}
+	
+	if (alPackagesPaths && buffer2) {
+		for (const alPackagesPath of alPackagesPaths) {
+			writePromises.push(fs.promises.writeFile(`${alPackagesPath}\\${buffer2.filename}`, new Uint8Array(buffer2.buffer)));
+		}
+	}
+
+	try {
+		await Promise.all(writePromises);
+	} catch (error) {
+		vscode.window.showErrorMessage(`Error writing symbols: ${error}`);
+		throw error;
+	}
+}
+
+//TODO: arreglar
 async function selectVersion(indexURL: string, version: string): Promise<string> {
 	const response = await fetch(indexURL);
 	const versions: Array<{ Version: string; CreationTime: string }> = await response.json();
@@ -113,7 +155,7 @@ async function getALPackagesPaths(): Promise<string[]> {
 			
 			alPackagesPaths.push(alPackagesPath);
 		}
-	} else {
+	} else { //TODO: eliminar
 		const selectedUri = await vscode.window.showOpenDialog({
 			canSelectFiles: false,
 			canSelectFolders: true,
@@ -139,22 +181,25 @@ function readAppJson(): any {
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		throw new Error('No workspace folder found.');
 	}
+
 	const appJsonPath = path.join(workspaceFolders[0].uri.fsPath, 'app.json');
 	if (!fs.existsSync(appJsonPath)) {
 		throw new Error('app.json not found in workspace root.');
-	}
-	try {
-		return JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
-	} catch (err) {
-		throw new Error('Failed to parse app.json.');
 	}*/
 
-	let appJson = JSON.parse('{"id":"c1bb7873-fe8b-4eab-bec2-90a12e71e0a2","name":"BC_APP","publisher":"CRAZE GmbH","version":"2.0.0.378","brief":"","description":"","privacyStatement":"https://craze.toys/","EULA":"https://craze.toys/","help":"https://craze.toys/","url":"https://craze.toys/","supportedLocales":["en-US","es-ES"],"platform":"1.0.0.0","application":"26.0.0.0","dependencies":[{"id":"70912191-3c4c-49fc-a1de-bc6ea1ac9da6","name":"Intrastat Core","publisher":"Microsoft","version":"25.0.0.0"},{"id":"a01864f8-9c3f-42f6-8328-8d7be1ce3e20","name":"_Exclude_Master_Data_Management","publisher":"Microsoft","version":"25.0.0.0"}],"screenshots":[],"idRanges":[{"from":50000,"to":50150},{"from":60000,"to":60150},{"from":80000,"to":80100}],"resourceExposurePolicy":{"allowDebugging":true,"allowDownloadingSource":false,"includeSourceInSymbolFile":false},"runtime":"15.0","features":["TranslationFile","GenerateCaptions","NoImplicitWith"],"target":"Cloud","suppressWarnings":["AA0210"]}');
-	let environmentType = (appJson.target || '').toString().toLocaleLowerCase();
-	if (environmentType === 'cloud' || environmentType === 'extension') {
-		appJson.target = 'sandbox';
-	} else {
-		appJson.target = 'onprem';
+	try {
+		let appJson = JSON.parse('{"id":"c1bb7873-fe8b-4eab-bec2-90a12e71e0a2","name":"BC_APP","publisher":"CRAZE GmbH","version":"2.0.0.378","brief":"","description":"","privacyStatement":"https://craze.toys/","EULA":"https://craze.toys/","help":"https://craze.toys/","url":"https://craze.toys/","supportedLocales":["en-US","es-ES"],"platform":"1.0.0.0","application":"26.0.0.0","dependencies":[{"id":"70912191-3c4c-49fc-a1de-bc6ea1ac9da6","name":"Intrastat Core","publisher":"Microsoft","version":"25.0.0.0"},{"id":"a01864f8-9c3f-42f6-8328-8d7be1ce3e20","name":"_Exclude_Master_Data_Management","publisher":"Microsoft","version":"25.0.0.0"}],"screenshots":[],"idRanges":[{"from":50000,"to":50150},{"from":60000,"to":60150},{"from":80000,"to":80100}],"resourceExposurePolicy":{"allowDebugging":true,"allowDownloadingSource":false,"includeSourceInSymbolFile":false},"runtime":"15.0","features":["TranslationFile","GenerateCaptions","NoImplicitWith"],"target":"Cloud","suppressWarnings":["AA0210"]}');
+		//let appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
+		let environmentType = (appJson.target || '').toString().toLocaleLowerCase();
+		if (environmentType === 'cloud' || environmentType === 'extension') {
+			appJson.target = 'sandbox';
+		} else {
+			appJson.target = 'onprem';
+		}
+
+		return appJson;
+	} catch (err) {
+		throw new Error('Failed to parse app.json.');
 	}
 }
 
