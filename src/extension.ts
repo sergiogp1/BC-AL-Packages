@@ -4,6 +4,11 @@ import * as path from 'path';
 import { RemoteZipPointer } from "@basisai/remote-zip";
 import { selectCountry } from './countries';
 
+interface VersionInfo {
+	Version: string;
+	CreationTime: string;
+}
+
 export function activate(context: vscode.ExtensionContext) {
 	let disposable = vscode.commands.registerCommand('al-packages.downloadPackages', async () => {		
 		const appJson = readAppJson();
@@ -27,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
 async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPaths?: string[]): Promise<void> {
 	const baseURL = 'https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net';
 	const writePromises: Promise<void>[] = [];
-	const selectedVersion = await selectVersion(`${baseURL}/${appJson.target}/indexes/${countryCode}.json`, appJson.application);
+	const selectedVersion = await findClosestVersion(`${baseURL}/${appJson.target}/indexes/${countryCode}.json`, appJson.application);
 	
 	let url = new URL(`${baseURL}/${appJson.target}/${selectedVersion}/${countryCode}`);
 	let remoteZip = await new RemoteZipPointer({url}).populate();
@@ -75,7 +80,7 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 
 	try {
 		await Promise.all(writePromises);
-		downloadSystemApp(appJson, selectedVersion, alPackagesPaths);
+		await downloadSystemApp(appJson, selectedVersion, alPackagesPaths);
 		vscode.window.showInformationMessage('Symbols downloaded successfully!');
 	} catch (error) {
 		vscode.window.showErrorMessage(`Error writing symbols: ${error}`);
@@ -83,23 +88,20 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 	}
 }
 
-async function downloadSystemApp(appJson: any, selectedVersion: string, alPackagesPaths?: string[]): Promise<void> {
+async function downloadSystemApp(appJson: any, selectedVersion?: string, alPackagesPaths?: string[]): Promise<void> {
 	const baseURL = 'https://bcartifacts-exdbf9fwegejdqak.b02.azurefd.net';
 	const writePromises: Promise<void>[] = [];
 	
 	let url = new URL(`${baseURL}/${appJson.target}/${selectedVersion}/platform`);
 	let remoteZip = await new RemoteZipPointer({url}).populate();
 	let files = remoteZip.files();
-	let buffer2: { buffer: ArrayBuffer; filename: string } | null = null;
 
-	const index = files.findIndex(file => file.filename === 'System.app');
-	if (index !== -1 ) {
-		buffer2 = { buffer: await remoteZip.fetch(files[index].filename), filename: path.basename(files[index].filename) };
-	}
+	const index = files.findIndex(file => file.filename.endsWith('/System.app'));
+	let systemApp = await remoteZip.fetch(files[index].filename);
 	
-	if (alPackagesPaths && buffer2) {
+	if (alPackagesPaths) {
 		for (const alPackagesPath of alPackagesPaths) {
-			writePromises.push(fs.promises.writeFile(`${alPackagesPath}\\${buffer2.filename}`, new Uint8Array(buffer2.buffer)));
+			writePromises.push(fs.promises.writeFile(`${alPackagesPath}\\Microsoft_System_${selectedVersion}.app`, new Uint8Array(systemApp)));
 		}
 	}
 
@@ -111,34 +113,61 @@ async function downloadSystemApp(appJson: any, selectedVersion: string, alPackag
 	}
 }
 
-//TODO: arreglar
-async function selectVersion(indexURL: string, version: string): Promise<string> {
-	const response = await fetch(indexURL);
-	const versions: Array<{ Version: string; CreationTime: string }> = await response.json();
-	const requestedParts = version.split('.').map(Number);
-	
-	let matchingVersions = versions.filter(v => {
-		const versionParts = v.Version.split('.').map(Number);
+async function findClosestVersion(url: string, versionFormat: string): Promise<string | undefined> {
+	try {
+		const response = await fetch(url);    
+		if (!response.ok) {
+			throw new Error(`HTTP error! status: ${response.status}`);
+		}
 		
-		for (let i = 0; i < requestedParts.length; i++) {
-			if (versionParts[i] !== requestedParts[i]) {
+		const versions: VersionInfo[] = await response.json();
+		
+		if (!versions || versions.length === 0) {
+			return undefined;
+		}
+		
+		const [w, x, y, z] = parseVersion(versionFormat);
+		
+		if (w !== 0 && z !== 0) {
+			const exact = versions.find(v => v.Version === versionFormat);
+			if (exact) {
+				return exact.Version;
+			}
+
+			return versions[versions.length - 1].Version || undefined;
+		}
+		
+		const exactMatch = versions.find(v => v.Version === versionFormat);
+		if (exactMatch) {
+			return exactMatch.Version;
+		}
+		
+		const filtered = versions.filter(v => {
+			const [vw, vx, vy, vz] = parseVersion(v.Version);
+		
+			if (w !== 0 && vw !== w) {
 				return false;
 			}
-		}
-
-		return true;
-	});
-	
-	if (matchingVersions.length === 0) {
-		const majorVersion = requestedParts[0];
-		matchingVersions = versions.filter(v => {
-			const versionParts = v.Version.split('.').map(Number);
-			return versionParts[0] === majorVersion;
-		});
-	}
 		
-	matchingVersions.sort((a, b) =>  new Date(b.CreationTime).getTime() - new Date(a.CreationTime).getTime());
-	return matchingVersions[0].Version;
+			if (x !== 0 && vx !== x) {
+				return false;
+			}
+
+			if (y !== 0 && !vy.toString().startsWith(y.toString())) {
+				return false;
+			}
+		
+			if (z !== 0 && vz !== z) {
+				return false;
+			}
+		
+			return true;
+		});
+		
+		return filtered.length > 0 ? filtered[filtered.length - 1].Version : undefined;
+  	} catch (error) {
+		throw error;
+	}
 }
 
 async function getALPackagesPaths(): Promise<string[]> {
@@ -155,7 +184,7 @@ async function getALPackagesPaths(): Promise<string[]> {
 			
 			alPackagesPaths.push(alPackagesPath);
 		}
-	} else { //TODO: eliminar
+	}/* else {
 		const selectedUri = await vscode.window.showOpenDialog({
 			canSelectFiles: false,
 			canSelectFolders: true,
@@ -171,13 +200,13 @@ async function getALPackagesPaths(): Promise<string[]> {
 			vscode.window.showWarningMessage('No folder selected. Download cancelled.');
 			return [];
 		}
-	}
+	}*/
 
 	return alPackagesPaths;
 }
 
 function readAppJson(): any {
-	/*const workspaceFolders = vscode.workspace.workspaceFolders;
+	const workspaceFolders = vscode.workspace.workspaceFolders;
 	if (!workspaceFolders || workspaceFolders.length === 0) {
 		throw new Error('No workspace folder found.');
 	}
@@ -185,11 +214,11 @@ function readAppJson(): any {
 	const appJsonPath = path.join(workspaceFolders[0].uri.fsPath, 'app.json');
 	if (!fs.existsSync(appJsonPath)) {
 		throw new Error('app.json not found in workspace root.');
-	}*/
+	}
 
 	try {
-		let appJson = JSON.parse('{"id":"c1bb7873-fe8b-4eab-bec2-90a12e71e0a2","name":"BC_APP","publisher":"CRAZE GmbH","version":"2.0.0.378","brief":"","description":"","privacyStatement":"https://craze.toys/","EULA":"https://craze.toys/","help":"https://craze.toys/","url":"https://craze.toys/","supportedLocales":["en-US","es-ES"],"platform":"1.0.0.0","application":"26.0.0.0","dependencies":[{"id":"70912191-3c4c-49fc-a1de-bc6ea1ac9da6","name":"Intrastat Core","publisher":"Microsoft","version":"25.0.0.0"},{"id":"a01864f8-9c3f-42f6-8328-8d7be1ce3e20","name":"_Exclude_Master_Data_Management","publisher":"Microsoft","version":"25.0.0.0"}],"screenshots":[],"idRanges":[{"from":50000,"to":50150},{"from":60000,"to":60150},{"from":80000,"to":80100}],"resourceExposurePolicy":{"allowDebugging":true,"allowDownloadingSource":false,"includeSourceInSymbolFile":false},"runtime":"15.0","features":["TranslationFile","GenerateCaptions","NoImplicitWith"],"target":"Cloud","suppressWarnings":["AA0210"]}');
-		//let appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
+		//let appJson = JSON.parse('{"id":"c1bb787....}');
+		let appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
 		let environmentType = (appJson.target || '').toString().toLocaleLowerCase();
 		if (environmentType === 'cloud' || environmentType === 'extension') {
 			appJson.target = 'sandbox';
@@ -201,6 +230,10 @@ function readAppJson(): any {
 	} catch (err) {
 		throw new Error('Failed to parse app.json.');
 	}
+}
+
+function parseVersion(version: string): number[] {
+	return version.split('.').map(Number);
 }
 
 export function deactivate() {}
