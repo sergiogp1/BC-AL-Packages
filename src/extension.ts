@@ -42,12 +42,15 @@ async function downloadArtifacts(appJson: any, countryCode: string, alPackagesPa
 
 	if (appJson.dependencies && Array.isArray(appJson.dependencies)) {
 		appJson.dependencies.forEach((dep: any) => {
-			if (dep.name) {
-				if (dep.name.startsWith('_')) {
-					symbolsToDownload.push(`${dep.name}_`);
-				} else {
-					symbolsToDownload.push(`_${dep.name}_`);
+			if (dep.name && dep.publisher) {
+				if (dep.publisher.toLocaleLowerCase() === 'microsoft') {
+					if (dep.name.startsWith('_')) {
+						symbolsToDownload.push(`${dep.name}_`);
+					} else {
+						symbolsToDownload.push(`_${dep.name}_`);
+					}
 				}
+				
 			}
 		});
 	}
